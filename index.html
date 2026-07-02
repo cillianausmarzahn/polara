@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POLARA — Polyphonic Synthesizer · VST3 / AU / Standalone</title>
+  <meta name="description" content="POLARA is a 16-voice polyphonic subtractive/FM synthesizer with a custom Moog ladder filter and deep modulation matrix — for tight, sharp filter movement in modern electronic music production.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Hanken+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" defer></script>
+
+  <style>
+    /* ── Tokens ── */
+    :root {
+      --bg:        #111111;
+      --bg-deep:   #0A0A0A;
+      --fg:        #FFFFFF;
+      --fg-muted:  rgba(255,255,255,0.45);
+      --fg-dim:    rgba(255,255,255,0.2);
+      --orange:    #FF4D00;
+      --orange-2:  #FF6B2B;
+      --border:    rgba(255,255,255,0.08);
+      --surface:   rgba(255,255,255,0.04);
+      --radius:    100px;
+      --font-display: 'Fraunces', serif;
+      --font-accent:  'Fraunces', serif;
+      --font-body:    'Hanken Grotesk', sans-serif;
+      --font-mono:    'Hanken Grotesk', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; text-decoration: none; }
+    button { font-family: inherit; cursor: pointer; border: none; background: none; }
+    img { display: block; max-width: 100%; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+
+    /* ── Noise overlay ── */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      opacity: 0.03;
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ── Typography ──
+       Fraunces (characterful, slightly wonky high-contrast serif) as the hero,
+       grounded by neutral Hanken Grotesk. Bold upright serif vs. light flowing
+       italic = the "perfectly imperfect" contrast. */
+    .display {
+      font-family: var(--font-display);
+      font-size: clamp(3rem, 7vw, 6.8rem);
+      line-height: 0.97;
+      letter-spacing: -0.025em;
+      font-optical-sizing: auto;
+      font-variation-settings: 'wght' 600, 'SOFT' 0, 'WONK' 1, 'opsz' 144;
+    }
+    .h2 {
+      font-family: var(--font-display);
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      line-height: 1.02;
+      letter-spacing: -0.02em;
+      font-optical-sizing: auto;
+      font-variation-settings: 'wght' 600, 'SOFT' 0, 'WONK' 1, 'opsz' 110;
+    }
+    .h3 {
+      font-family: var(--font-display);
+      font-size: 1.2rem;
+      letter-spacing: -0.01em;
+      font-variation-settings: 'wght' 600, 'SOFT' 0, 'WONK' 0, 'opsz' 40;
+    }
+    /* Flowing italic accent — the light, swashy counterpoint to the bold serif */
+    .accent {
+      font-family: var(--font-accent);
+      font-style: italic;
+      letter-spacing: -0.005em;
+      font-variation-settings: 'wght' 400, 'SOFT' 60, 'WONK' 0;
+    }
+    .eyebrow {
+      font-family: var(--font-accent);
+      font-style: italic;
+      font-size: 1.1rem;
+      letter-spacing: 0;
+      text-transform: none;
+      color: var(--orange);
+      font-variation-settings: 'wght' 420, 'SOFT' 60, 'WONK' 0;
+    }
+
+    /* ── Layout ── */
+    .container { max-width: 1400px; margin: 0 auto; padding: 0 32px; }
+    @media (min-width: 768px) { .container { padding: 0 48px; } }
+    @media (min-width: 1200px) { .container { padding: 0 64px; } }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 26px;
+      border-radius: var(--radius);
+      font-family: var(--font-body);
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      transition: all 0.22s cubic-bezier(0.16,1,0.3,1);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
+    .btn-orange {
+      background: var(--orange);
+      color: #fff;
+    }
+    .btn-orange:hover { background: var(--orange-2); transform: scale(1.04); }
+    .btn-orange:active { transform: scale(0.99); }
+    .btn-outline {
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--border);
+    }
+    .btn-outline:hover { background: var(--surface); border-color: rgba(255,255,255,0.18); }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 200;
+      padding: 24px 0;
+      transition: background 0.4s, backdrop-filter 0.4s, border-color 0.4s;
+      border-bottom: 1px solid transparent;
+    }
+    nav.scrolled {
+      background: rgba(10,10,10,0.88);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-color: var(--border);
+      padding: 16px 0;
+    }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .nav-logo {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+    .nav-logo sup {
+      font-size: 0.55rem;
+      opacity: 0.5;
+      letter-spacing: 0.02em;
+      vertical-align: super;
+    }
+    .nav-links {
+      display: none;
+      list-style: none;
+      gap: 36px;
+    }
+    @media (min-width: 900px) { .nav-links { display: flex; } }
+    .nav-links a {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.82);
+      letter-spacing: 0.06em;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--fg); }
+    nav.scrolled .nav-links a { color: var(--fg-muted); }
+    nav.scrolled .nav-links a:hover { color: var(--fg); }
+    .nav-actions { display: flex; align-items: center; gap: 10px; }
+
+    /* ── HERO ── */
+    #hero {
+      position: relative;
+      height: 100dvh;
+      min-height: 600px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    #hero::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 260px;
+      background: linear-gradient(to top, var(--bg) 0%, transparent 100%);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    /* Hero visual — full bleed video area */
+    .hero-visual {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+    }
+    .hero-placeholder {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+    #hero-video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+      will-change: transform;
+      transform-origin: center center;
+    }
+    /* Gradient overlays to let text read */
+    .hero-vignette {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(to top, rgba(10,10,10,0.96) 0%, rgba(10,10,10,0.55) 35%, transparent 65%),
+        linear-gradient(to right, rgba(10,10,10,0.3) 0%, transparent 60%),
+        radial-gradient(ellipse at center, transparent 30%, rgba(10,10,10,0.4) 100%);
+      z-index: 1;
+    }
+
+    /* Watermark */
+    .hero-watermark {
+      position: absolute;
+      bottom: -0.15em;
+      left: -0.04em;
+      font-family: var(--font-display);
+      font-size: clamp(12rem, 28vw, 26rem);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      color: transparent;
+      -webkit-text-stroke: 1px rgba(255,255,255,0.06);
+      pointer-events: none;
+      z-index: 2;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    /* Hero content bottom bar */
+    .hero-bottom {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      z-index: 10;
+      padding: 0 0 48px;
+    }
+    .hero-bottom-inner {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 32px;
+    }
+    .hero-headline { flex: 1; }
+    .hero-headline .display { color: var(--fg); }
+    /* ── SOUND DESIGN ── */
+    #sound-design { padding: 110px 0 100px; position: relative; overflow: hidden; }
+    #sound-design::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 150px;
+      background: linear-gradient(to bottom, var(--bg) 0%, transparent 100%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Aurora background */
+    #aurora-bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+    #aurora-blobs { position: absolute; inset: 0; mix-blend-mode: screen; }
+    .aurora-blob {
+      position: absolute; border-radius: 50%;
+      filter: blur(90px);
+      will-change: transform;
+    }
+    .aurora-blob-1 {
+      width: 55%; height: 80%;
+      top: -30%; left: -20%;
+      background: rgba(255, 77, 0, 0.36);
+      animation: aurora-move-1 28s infinite alternate ease-in-out;
+    }
+    .aurora-blob-2 {
+      width: 50%; height: 70%;
+      bottom: -30%; right: -15%;
+      background: rgba(255, 145, 0, 0.38);
+      animation: aurora-move-2 36s infinite alternate ease-in-out;
+    }
+    .aurora-blob-3 {
+      width: 40%; height: 55%;
+      top: 20%; left: 40%;
+      background: rgba(170, 25, 0, 0.32);
+      animation: aurora-move-3 44s infinite alternate ease-in-out;
+    }
+    /* Soft radial dark pocket over text + bottom fade — aurora stays visible everywhere */
+    #sound-design::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(to top, var(--bg) 0%, transparent 18%),
+        radial-gradient(ellipse 55% 72% at 20% 42%, rgba(10,4,1,0.72) 0%, rgba(10,4,1,0.28) 55%, transparent 100%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    /* Brighter text to compensate for ambient glow */
+    #sound-design .lead { color: rgba(255,255,255,0.78); }
+    #sound-design .check-list li { color: rgba(255,255,255,0.74); }
+    #sound-design .eyebrow { text-shadow: 0 0 24px rgba(0,0,0,0.85), 0 1px 3px rgba(0,0,0,0.6); }
+    #sound-design .h2 { text-shadow: 0 2px 32px rgba(0,0,0,0.7); }
+    @keyframes aurora-move-1 {
+      0%   { transform: translate(0px, 0px) scale(1); }
+      33%  { transform: translate(60px, 30px) scale(1.1); }
+      66%  { transform: translate(-30px, 50px) scale(0.95); }
+      100% { transform: translate(40px, -20px) scale(1.05); }
+    }
+    @keyframes aurora-move-2 {
+      0%   { transform: translate(0px, 0px) scale(1); }
+      33%  { transform: translate(-70px, -40px) scale(1.15); }
+      66%  { transform: translate(50px, -20px) scale(0.9); }
+      100% { transform: translate(-30px, 35px) scale(1.08); }
+    }
+    @keyframes aurora-move-3 {
+      0%   { transform: translate(0px, 0px) scale(1); }
+      50%  { transform: translate(-50px, 30px) scale(1.2); }
+      100% { transform: translate(40px, -40px) scale(0.85); }
+    }
+    .aurora-radial-pulse {
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 60% 50% at 25% 50%, rgba(255,77,0,0.10) 0%, transparent 70%),
+                  radial-gradient(ellipse 50% 60% at 75% 50%, rgba(255,120,0,0.08) 0%, transparent 70%);
+      animation: aurora-pulse 12s infinite ease-in-out;
+    }
+    @keyframes aurora-pulse {
+      0%, 100% { opacity: 0.6; }
+      50%       { opacity: 1; }
+    }
+    .aurora-star {
+      position: absolute;
+      width: 2px; height: 2px;
+      background: rgba(255, 200, 160, 0.9);
+      border-radius: 50%;
+    }
+    @keyframes aurora-twinkle {
+      0%, 100% { opacity: 0; transform: scale(0.5); }
+      50%       { opacity: 1; transform: scale(1); }
+    }
+    .sound-design-inner { max-width: 720px; }
+    .sound-design-inner .eyebrow { display: block; margin-bottom: 16px; }
+    .sound-design-inner .h2 { margin-bottom: 22px; }
+    .lead {
+      color: var(--fg-muted);
+      font-size: 1.05rem;
+      line-height: 1.75;
+      max-width: 560px;
+      margin-bottom: 40px;
+    }
+
+    /* ── VST SCREENSHOT ── */
+    #screenshot {
+      padding: 100px 0 120px;
+      position: relative;
+      overflow: hidden;
+    }
+    #screenshot::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 150px;
+      background: linear-gradient(to bottom, var(--bg) 0%, transparent 100%);
+      pointer-events: none;
+      z-index: 1;
+    }
+    #screenshot::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 150px;
+      background: linear-gradient(to top, var(--bg) 0%, transparent 100%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .screenshot-header {
+      margin-bottom: 52px;
+    }
+    .screenshot-header .eyebrow { display: block; margin-bottom: 14px; }
+    .screenshot-header .h2 { max-width: 520px; margin: 0 auto; }
+    .screenshot-frame {
+      margin: 0 auto;
+      max-width: 50%;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      position: relative;
+      background: var(--bg-deep);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+      line-height: 0;
+    }
+    .screenshot-frame img { width: 100%; height: auto; display: block; }
+    /* ── NOW PLAYING ── */
+    #sound {
+      padding: 100px 0;
+      position: relative;
+      overflow: hidden;
+    }
+    #sound::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 150px;
+      background: linear-gradient(to bottom, var(--bg) 0%, transparent 100%);
+      pointer-events: none;
+      z-index: 1;
+    }
+    #sound::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 150px;
+      background: linear-gradient(to top, var(--bg) 0%, transparent 100%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .wave-bg-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; opacity: 0.3; }
+    #screenshot > .container, #sound > .container, #sound-design > .container { position: relative; z-index: 1; }
+    .now-playing-head { text-align: center; margin-bottom: 44px; }
+    .now-playing-head .eyebrow { display: block; margin-bottom: 10px; }
+    .now-playing-inner { max-width: 640px; margin: 0 auto; }
+
+    .waveform-player {
+      background: rgba(12, 6, 3, 0.7);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+    }
+    .player-track-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+    .track-name { font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem; }
+    .track-genre { font-family: var(--font-mono); font-size: 0.68rem; color: var(--orange); font-weight: 400; letter-spacing: 0.1em; }
+    .waveform-svg {
+      width: 100%;
+      height: 72px;
+      margin-bottom: 14px;
+      cursor: pointer;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .player-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .play-btn {
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      background: var(--orange);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      cursor: pointer;
+      border: none;
+      transition: transform 0.18s, background 0.18s;
+    }
+    .play-btn:hover { transform: scale(1.08); background: var(--orange-2); }
+    .play-btn:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
+    .play-btn svg { width: 16px; height: 16px; fill: white; margin-left: 2px; }
+    .time-display { font-family: var(--font-mono); font-size: 0.72rem; color: var(--fg-muted); }
+    .demo-list { margin-top: 16px; display: flex; flex-direction: column; gap: 2px; }
+    .demo-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.18s;
+    }
+    .demo-row:hover { background: rgba(255,255,255,0.04); }
+    .demo-row.active { background: rgba(255,77,0,0.08); }
+    .demo-row-num { font-family: var(--font-mono); font-size: 0.68rem; color: var(--fg-muted); width: 14px; text-align: center; }
+    .demo-row.active .demo-row-num { color: var(--orange); }
+    .demo-row-name { flex: 1; font-family: var(--font-mono); font-size: 0.78rem; }
+    .demo-row-dur { font-family: var(--font-mono); font-size: 0.68rem; color: var(--fg-muted); }
+
+    .check-list { list-style: none; display: flex; flex-direction: column; gap: 14px; }
+    .check-list li {
+      display: flex;
+      gap: 14px;
+      font-size: 0.92rem;
+      color: var(--fg-muted);
+    }
+    .check-bullet {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,77,0,0.4);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .check-bullet svg { width: 10px; height: 10px; stroke: var(--orange); stroke-width: 2.5; fill: none; }
+
+    /* ── PRICING ── */
+    #pricing { padding: 120px 0; position: relative; overflow: hidden; }
+    #pricing-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; opacity: 0.55; }
+    #pricing::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 150px;
+      background: linear-gradient(to bottom, var(--bg) 0%, transparent 100%);
+      pointer-events: none;
+      z-index: 1;
+    }
+    #pricing::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(to top, var(--bg) 0%, transparent 18%),
+        radial-gradient(ellipse 70% 50% at 20% 30%, transparent 30%, rgba(17,17,17,0.55) 100%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    #pricing > .container { position: relative; z-index: 1; }
+    .pricing-header {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 60px;
+    }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    @media (min-width: 640px) { .pricing-grid { grid-template-columns: repeat(2, 1fr); } }
+    .price-card {
+      padding: 40px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      background: rgba(12, 6, 3, 0.7);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    .price-card.featured {
+      border-color: var(--orange);
+      background: rgba(17, 5, 0, 0.7);
+      position: relative;
+    }
+    .price-card.featured::before {
+      content: 'Most Popular';
+      position: absolute;
+      top: -1px; right: 28px;
+      transform: translateY(-50%);
+      background: var(--orange);
+      color: white;
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      font-weight: 400;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 4px 14px;
+      border-radius: 100px;
+    }
+    .price-name { font-family: var(--font-display); font-size: 1.1rem; font-weight: 600; }
+    .price-desc { font-size: 0.88rem; color: var(--fg-muted); line-height: 1.6; }
+    .price-amount {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .price-big {
+      font-family: var(--font-accent);
+      font-size: 3.6rem;
+      font-weight: 600;
+      line-height: 1;
+      color: var(--fg);
+    }
+    .price-big.orange { color: var(--orange); }
+    .price-cur { font-family: var(--font-accent); font-style: italic; font-size: 1.2rem; color: var(--fg-muted); }
+    .price-note { font-family: var(--font-accent); font-style: italic; font-size: 0.95rem; color: var(--fg-muted); letter-spacing: 0; }
+    .price-features { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+    .price-features li {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 0.88rem; color: var(--fg-muted);
+    }
+    .price-features li .check-bullet { flex-shrink: 0; }
+    .price-cta { margin-top: auto; }
+
+    /* ── FOOTER ── */
+    footer {
+      padding: 56px 0 36px;
+      background: var(--bg);
+    }
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 40px;
+    }
+    @media (min-width: 768px) {
+      .footer-grid {
+        grid-template-columns: 1.2fr repeat(3, 1fr);
+        align-items: start;
+      }
+    }
+    .footer-brand .nav-logo { margin-bottom: 14px; display: block; }
+    .newsletter-form { margin-top: 14px; margin-bottom: 10px; max-width: 210px; }
+    .newsletter-row { display: flex; }
+    .newsletter-input {
+      flex: 1;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-right: none;
+      border-radius: 6px 0 0 6px;
+      padding: 9px 12px;
+      font-family: var(--font-body);
+      font-size: 0.82rem;
+      color: var(--fg);
+      outline: none;
+      transition: border-color 0.18s;
+      min-width: 0;
+    }
+    .newsletter-input::placeholder { color: var(--fg-muted); }
+    .newsletter-input:focus { border-color: rgba(255,77,0,0.45); }
+    .newsletter-btn {
+      background: var(--orange);
+      border: none;
+      border-radius: 0 6px 6px 0;
+      padding: 9px 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      color: #fff;
+      transition: background 0.18s;
+      flex-shrink: 0;
+    }
+    .newsletter-btn:hover { background: #e04400; }
+    .newsletter-btn svg { width: 14px; height: 14px; }
+    .newsletter-desc { font-size: 0.82rem; color: rgba(255,255,255,0.55); line-height: 1.55; margin-top: 10px; max-width: 230px; }
+    .newsletter-privacy { font-size: 0.71rem; color: var(--fg-muted); line-height: 1.45; margin-top: 7px; max-width: 230px; opacity: 0.7; }
+    .footer-col-label {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 400;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--fg-muted);
+      margin-bottom: 14px;
+      display: block;
+    }
+    .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 9px; }
+    .footer-col ul a { font-size: 0.87rem; color: var(--fg-muted); transition: color 0.18s; }
+    .footer-col ul a:hover { color: var(--fg); }
+    .footer-bottom {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }
+    .footer-bottom span { font-size: 0.78rem; color: var(--fg-muted); }
+    .footer-bottom .orange { color: var(--orange); }
+
+    /* ── SCROLL REVEAL ── */
+    /* Elements start visible; GSAP animates them from hidden if it loads */
+    .fade-up { opacity: 1; transform: none; }
+    .fade-in { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav id="nav" role="navigation" aria-label="Main navigation">
+  <div class="container">
+    <div class="nav-inner">
+      <a class="nav-logo" href="#" aria-label="Polara home">POLARA <sup>™</sup></a>
+      <ul class="nav-links" role="list">
+        <li><a href="javascript:void(0)">Presets</a></li>
+        <li><a href="javascript:void(0)">Download</a></li>
+        <li><a href="javascript:void(0)">Support</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="#pricing" class="btn btn-outline" style="padding:10px 20px;font-size:0.82rem;">Free Trial</a>
+        <a href="#pricing" class="btn btn-orange" style="padding:10px 20px;font-size:0.82rem;">
+          Buy Now — €69
+        </a>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- ── HERO ── -->
+<section id="hero" aria-label="Hero">
+
+
+  <!-- Visual -->
+  <div class="hero-visual" aria-hidden="true">
+    <div class="hero-placeholder">
+      <video id="hero-video" src="hero-new-web.mp4" autoplay loop muted playsinline preload="auto"></video>
+    </div>
+    <div class="hero-vignette"></div>
+    <div class="hero-watermark" aria-hidden="true">POLARA</div>
+  </div>
+
+
+  <!-- Bottom content -->
+  <div class="hero-bottom">
+    <div class="container">
+      <div class="hero-bottom-inner">
+        <div class="hero-headline">
+          <h1 class="display" id="hero-h1">
+            The clean synth that<br><span class="accent" style="color:var(--orange)">doesn't sound clean.</span>
+          </h1>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── VST SCREENSHOT ── -->
+<section id="screenshot" aria-labelledby="screenshot-h">
+  <canvas class="wave-bg-canvas" id="wave-canvas-plugin" aria-hidden="true"></canvas>
+  <div class="container">
+    <div class="screenshot-header fade-up" style="text-align:center;">
+      <span class="eyebrow">The Plugin</span>
+      <h2 class="h2" id="screenshot-h">Every control.<br><span class="accent" style="color:var(--orange)">Perfectly placed.</span></h2>
+    </div>
+    <figure class="screenshot-frame">
+      <img src="plugin-ui.png" alt="Polara synthesizer plugin interface — oscillators, filter, envelopes, modulation matrix, arpeggiator and effects" loading="lazy" decoding="async">
+    </figure>
+  </div>
+</section>
+
+<!-- ── SOUND DESIGN ── -->
+<section id="sound-design" aria-labelledby="sd-h">
+  <div id="aurora-bg" aria-hidden="true">
+    <div class="aurora-radial-pulse"></div>
+    <div id="aurora-blobs">
+      <div class="aurora-blob aurora-blob-1"></div>
+      <div class="aurora-blob aurora-blob-2"></div>
+      <div class="aurora-blob aurora-blob-3"></div>
+    </div>
+  </div>
+  <div class="container">
+    <div class="sound-design-inner fade-up">
+      <span class="eyebrow">Sound Design</span>
+      <h2 class="h2" id="sd-h">Where the sharp<br><span class="accent" style="color:var(--orange)">filters live.</span></h2>
+      <p class="lead">POLARA is a 16-voice polyphonic subtractive/FM synthesizer built around a custom Moog ladder filter — designed for tight, sharp filter movement in techno, trance, DnB, and modern electronic production.</p>
+      <ul class="check-list">
+        <li>
+          <span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3"/></svg></span>
+          16-voice polyphony with FM + AM cross-modulation and Hard Sync between oscillators
+        </li>
+        <li>
+          <span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3"/></svg></span>
+          10 filter modes including Allpass and Comb — Karplus-Strong plucks straight from the filter
+        </li>
+        <li>
+          <span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3"/></svg></span>
+          Custom FastLadderFilter — 100× faster cutoff response than standard JUCE ladder
+        </li>
+        <li>
+          <span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3"/></svg></span>
+          Dual LFOs with 5 waveforms, tempo-synced 1/2 to 1/64 including Triplet subdivisions
+        </li>
+        <li>
+          <span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3"/></svg></span>
+          Full FX chain: Distortion · Chorus · Reverse Delay · FDN8 Reverb (6 algorithms) · Saturator
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ── NOW PLAYING ── -->
+<section id="sound" aria-labelledby="np-h">
+  <canvas class="wave-bg-canvas" id="wave-canvas-sound" aria-hidden="true"></canvas>
+  <div class="container">
+    <div class="now-playing-head fade-up">
+      <span class="eyebrow" id="np-h">Now Playing</span>
+      <h2 class="h2">Hear it in <span class="accent" style="color:var(--orange)">motion.</span></h2>
+    </div>
+    <div class="now-playing-inner fade-up">
+      <div class="waveform-player">
+          <div class="player-track-info">
+            <div>
+              <div class="track-name">Acid Grid — Techno Lead</div>
+            </div>
+            <div class="track-genre">Demo 01</div>
+          </div>
+          <!-- Waveform -->
+          <svg class="waveform-svg" viewBox="0 0 400 72" preserveAspectRatio="none" aria-label="Waveform display" role="img">
+            <defs>
+              <linearGradient id="wfg" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#FF4D00"/>
+                <stop offset="35%" stop-color="#FF6B2B"/>
+                <stop offset="35%" stop-color="#555" stop-opacity="0.5"/>
+                <stop offset="100%" stop-color="#333" stop-opacity="0.4"/>
+              </linearGradient>
+            </defs>
+            <g fill="url(#wfg)">
+              <rect x="2" y="26" width="3" height="20" rx="1.5"/><rect x="8" y="18" width="3" height="36" rx="1.5"/>
+              <rect x="14" y="8"  width="3" height="56" rx="1.5"/><rect x="20" y="16" width="3" height="40" rx="1.5"/>
+              <rect x="26" y="24" width="3" height="24" rx="1.5"/><rect x="32" y="10" width="3" height="52" rx="1.5"/>
+              <rect x="38" y="6"  width="3" height="60" rx="1.5"/><rect x="44" y="20" width="3" height="32" rx="1.5"/>
+              <rect x="50" y="14" width="3" height="44" rx="1.5"/><rect x="56" y="28" width="3" height="16" rx="1.5"/>
+              <rect x="62" y="12" width="3" height="48" rx="1.5"/><rect x="68" y="4"  width="3" height="64" rx="1.5"/>
+              <rect x="74" y="18" width="3" height="36" rx="1.5"/><rect x="80" y="26" width="3" height="20" rx="1.5"/>
+              <rect x="86" y="8"  width="3" height="56" rx="1.5"/><rect x="92" y="16" width="3" height="40" rx="1.5"/>
+              <rect x="98" y="22" width="3" height="28" rx="1.5"/><rect x="104" y="12" width="3" height="48" rx="1.5"/>
+              <rect x="110" y="6" width="3" height="60" rx="1.5"/><rect x="116" y="18" width="3" height="36" rx="1.5"/>
+              <rect x="122" y="10" width="3" height="52" rx="1.5"/><rect x="128" y="24" width="3" height="24" rx="1.5"/>
+              <rect x="134" y="14" width="3" height="44" rx="1.5"/><rect x="140" y="2"  width="3" height="68" rx="1.5"/>
+              <!-- Playback cursor -->
+              <rect x="143" y="0" width="2" height="72" fill="#FF4D00" rx="1" opacity="0.9"/>
+              <!-- Remaining (dim) -->
+              <rect x="148" y="16" width="3" height="40" rx="1.5" opacity="0.4"/><rect x="154" y="20" width="3" height="32" rx="1.5" opacity="0.4"/>
+              <rect x="160" y="8"  width="3" height="56" rx="1.5" opacity="0.4"/><rect x="166" y="12" width="3" height="48" rx="1.5" opacity="0.4"/>
+              <rect x="172" y="4"  width="3" height="64" rx="1.5" opacity="0.4"/><rect x="178" y="18" width="3" height="36" rx="1.5" opacity="0.4"/>
+              <rect x="184" y="26" width="3" height="20" rx="1.5" opacity="0.4"/><rect x="190" y="10" width="3" height="52" rx="1.5" opacity="0.4"/>
+              <rect x="196" y="14" width="3" height="44" rx="1.5" opacity="0.4"/><rect x="202" y="22" width="3" height="28" rx="1.5" opacity="0.4"/>
+              <rect x="208" y="6"  width="3" height="60" rx="1.5" opacity="0.4"/><rect x="214" y="16" width="3" height="40" rx="1.5" opacity="0.4"/>
+              <rect x="220" y="28" width="3" height="16" rx="1.5" opacity="0.4"/><rect x="226" y="12" width="3" height="48" rx="1.5" opacity="0.4"/>
+              <rect x="232" y="8"  width="3" height="56" rx="1.5" opacity="0.4"/><rect x="238" y="18" width="3" height="36" rx="1.5" opacity="0.4"/>
+              <rect x="244" y="24" width="3" height="24" rx="1.5" opacity="0.4"/><rect x="250" y="10" width="3" height="52" rx="1.5" opacity="0.4"/>
+              <rect x="256" y="14" width="3" height="44" rx="1.5" opacity="0.4"/><rect x="262" y="4"  width="3" height="64" rx="1.5" opacity="0.4"/>
+              <rect x="268" y="20" width="3" height="32" rx="1.5" opacity="0.4"/><rect x="274" y="26" width="3" height="20" rx="1.5" opacity="0.4"/>
+              <rect x="280" y="8"  width="3" height="56" rx="1.5" opacity="0.4"/><rect x="286" y="16" width="3" height="40" rx="1.5" opacity="0.4"/>
+              <rect x="292" y="22" width="3" height="28" rx="1.5" opacity="0.4"/><rect x="298" y="12" width="3" height="48" rx="1.5" opacity="0.4"/>
+              <rect x="304" y="6"  width="3" height="60" rx="1.5" opacity="0.4"/><rect x="310" y="18" width="3" height="36" rx="1.5" opacity="0.4"/>
+              <rect x="316" y="26" width="3" height="20" rx="1.5" opacity="0.4"/><rect x="322" y="10" width="3" height="52" rx="1.5" opacity="0.4"/>
+              <rect x="328" y="14" width="3" height="44" rx="1.5" opacity="0.4"/><rect x="334" y="2"  width="3" height="68" rx="1.5" opacity="0.4"/>
+              <rect x="340" y="20" width="3" height="32" rx="1.5" opacity="0.4"/><rect x="346" y="8"  width="3" height="56" rx="1.5" opacity="0.4"/>
+              <rect x="352" y="16" width="3" height="40" rx="1.5" opacity="0.4"/><rect x="358" y="24" width="3" height="24" rx="1.5" opacity="0.4"/>
+              <rect x="364" y="12" width="3" height="48" rx="1.5" opacity="0.4"/><rect x="370" y="6"  width="3" height="60" rx="1.5" opacity="0.4"/>
+              <rect x="376" y="18" width="3" height="36" rx="1.5" opacity="0.4"/><rect x="382" y="22" width="3" height="28" rx="1.5" opacity="0.4"/>
+              <rect x="388" y="10" width="3" height="52" rx="1.5" opacity="0.4"/><rect x="394" y="14" width="3" height="44" rx="1.5" opacity="0.4"/>
+            </g>
+          </svg>
+          <div class="player-row">
+            <button class="play-btn" id="play-btn" aria-label="Play audio demo">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><polygon points="4 2 14 8 4 14"/></svg>
+            </button>
+            <span class="time-display"><span id="time-cur">1:22</span> / 3:58</span>
+          </div>
+          <div class="demo-list" role="list" aria-label="Demo tracks">
+            <div class="demo-row active" role="listitem" tabindex="0">
+              <span class="demo-row-num" aria-hidden="true">▶</span>
+              <span class="demo-row-name">Acid Grid — Techno Lead</span>
+              <span class="demo-row-dur">3:58</span>
+            </div>
+            <div class="demo-row" role="listitem" tabindex="0">
+              <span class="demo-row-num">2</span>
+              <span class="demo-row-name">Dark Pluck — Bass Drop</span>
+              <span class="demo-row-dur">2:44</span>
+            </div>
+            <div class="demo-row" role="listitem" tabindex="0">
+              <span class="demo-row-num">3</span>
+              <span class="demo-row-name">Polaris — Pad Drift</span>
+              <span class="demo-row-dur">4:12</span>
+            </div>
+          </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── PRICING ── -->
+<section id="pricing" aria-labelledby="pricing-h">
+  <canvas id="pricing-canvas" aria-hidden="true"></canvas>
+  <div class="container">
+    <div class="pricing-header">
+      <span class="eyebrow" style="display:block;margin-bottom:10px">Pricing</span>
+      <h2 class="h2 fade-up" id="pricing-h">Start free.<br><span class="accent" style="color:var(--orange)">Own it forever.</span></h2>
+      <p style="color:var(--fg-muted);max-width:400px;font-size:0.95rem;line-height:1.7;" class="fade-up">Try POLARA free — all 40+ factory presets, no time limit. Upgrade when you're ready — one payment, yours forever.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="price-card fade-up">
+        <div class="price-name">Free Trial</div>
+        <p class="price-desc">The full POLARA experience — all 40+ factory presets included.</p>
+        <div class="price-amount">
+          <span class="price-big" style="color:var(--fg-muted)">Free</span>
+        </div>
+        <ul class="price-features">
+          <li><span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="#FF4D00" stroke-width="2.5"><polyline points="2,6 5,9 10,3"/></svg></span>40+ factory presets</li>
+          <li><span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="#FF4D00" stroke-width="2.5"><polyline points="2,6 5,9 10,3"/></svg></span>Subtractive + FM synthesis</li>
+          <li><span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="#FF4D00" stroke-width="2.5"><polyline points="2,6 5,9 10,3"/></svg></span>Full FX chain</li>
+          <li><span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="#FF4D00" stroke-width="2.5"><polyline points="2,6 5,9 10,3"/></svg></span>VST3 · AU · Standalone</li>
+          <li><span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="#FF4D00" stroke-width="2.5"><polyline points="2,6 5,9 10,3"/></svg></span>No time limit</li>
+        </ul>
+        <div class="price-cta">
+          <a href="#" class="btn btn-outline" style="width:100%;justify-content:center;" aria-label="Download Polara free trial">Download Free</a>
+        </div>
+      </div>
+      <div class="price-card featured fade-up">
+        <div class="price-name">Full License</div>
+        <p class="price-desc">All 40+ factory presets across 7 banks, lifetime updates, priority support.<br>One payment.</p>
+        <div class="price-amount">
+          <span class="price-cur">€</span>
+          <span class="price-big orange">69</span>
+          <span class="price-note">one-time</span>
+        </div>
+        <ul class="price-features">
+          <li><span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="#FF4D00" stroke-width="2.5"><polyline points="2,6 5,9 10,3"/></svg></span>40+ presets</li>
+          <li><span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="#FF4D00" stroke-width="2.5"><polyline points="2,6 5,9 10,3"/></svg></span>Lifetime free updates</li>
+          <li><span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="#FF4D00" stroke-width="2.5"><polyline points="2,6 5,9 10,3"/></svg></span>Priority email support</li>
+          <li><span class="check-bullet" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="#FF4D00" stroke-width="2.5"><polyline points="2,6 5,9 10,3"/></svg></span>VST3 · AU · Standalone · Win &amp; macOS</li>
+        </ul>
+        <div class="price-cta">
+          <a href="#" class="btn btn-orange" style="width:100%;justify-content:center;" aria-label="Buy Polara full license">
+            Buy POLARA — €69
+          </a>
+          <p style="text-align:center;font-size:0.76rem;color:var(--fg-muted);margin-top:10px;">No subscription · Windows &amp; macOS</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="nav-logo" href="#" aria-label="Polara home">POLARA <sup>™</sup></a>
+        <form class="newsletter-form" onsubmit="return false;" aria-label="Newsletter signup">
+          <div class="newsletter-row">
+            <input type="email" class="newsletter-input" placeholder="your@email.com" aria-label="Email address" required>
+            <button type="submit" class="newsletter-btn" aria-label="Subscribe">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="8" x2="13" y2="8"/><polyline points="9,4 13,8 9,12"/></svg>
+            </button>
+          </div>
+        </form>
+        <p class="newsletter-desc">Exclusive sound tips, preset drops and production insights delivered straight to your inbox.</p>
+        <p class="newsletter-privacy">Your email is used for the POLARA newsletter only. Unsubscribe anytime.</p>
+      </div>
+      <div class="footer-col">
+        <span class="footer-col-label">Product</span>
+        <ul>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#presets">Presets</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <span class="footer-col-label">Support</span>
+        <ul>
+          <li><a href="#">Video Tutorials</a></li>
+          <li><a href="#">Contact</a></li>
+          <li><a href="#">FAQ</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <span class="footer-col-label">Legal</span>
+        <ul>
+          <li><a href="#">License</a></li>
+          <li><a href="#">Privacy</a></li>
+          <li><a href="#">EULA</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Polara. All rights reserved.</span>
+      <span>VST3 · AU · Standalone · <span class="orange">Win</span> · <span class="orange">macOS</span></span>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ── Nav scroll ───────────────────────────────────────────
+(function() {
+  const nav = document.getElementById('nav');
+  window.addEventListener('scroll', () => {
+    nav.classList.toggle('scrolled', window.scrollY > 60);
+  }, { passive: true });
+})();
+
+// ── Hero video zoom on scroll ────────────────────────────
+(function() {
+  const video = document.getElementById('hero-video');
+  const hero  = document.getElementById('hero');
+  if (!video || !hero) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let ticking = false;
+  function update() {
+    const progress = Math.min(window.scrollY / hero.offsetHeight, 1);
+    video.style.transform = 'scale(' + (1 + progress * 0.3) + ')';
+    ticking = false;
+  }
+  window.addEventListener('scroll', function() {
+    if (!ticking) { requestAnimationFrame(update); ticking = true; }
+  }, { passive: true });
+})();
+
+// ── GSAP animations ──────────────────────────────────────
+window.addEventListener('load', function() {
+  if (window.gsap && window.ScrollTrigger) {
+    gsap.registerPlugin(ScrollTrigger);
+
+    // Hero entrance
+    const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+    tl.from('#hero-h1',        { opacity: 0, y: 40,  duration: 0.9, delay: 0.4 })
+      .from('.hero-watermark', { opacity: 0, duration: 1.5 }, '-=0.8');
+
+
+    // Scroll reveals — gsap.from() so CSS fallback (opacity:1) stays intact if GSAP fails
+    gsap.utils.toArray('.fade-up').forEach(el => {
+      gsap.from(el,
+        { opacity: 0, y: 36, duration: 0.8, ease: 'power3.out',
+          scrollTrigger: { trigger: el, start: 'top 88%', toggleActions: 'play none none none' }
+        }
+      );
+    });
+    gsap.utils.toArray('.fade-in').forEach(el => {
+      gsap.from(el,
+        { opacity: 0, duration: 0.8, ease: 'power2.out',
+          scrollTrigger: { trigger: el, start: 'top 88%', toggleActions: 'play none none none' }
+        }
+      );
+    });
+  }
+});
+
+// ── Play button ──────────────────────────────────────────
+(function() {
+  const btn = document.getElementById('play-btn');
+  if (!btn) return;
+  let playing = false;
+  btn.addEventListener('click', () => {
+    playing = !playing;
+    btn.querySelector('svg').innerHTML = playing
+      ? '<rect x="3" y="2" width="4" height="12" rx="1"/><rect x="9" y="2" width="4" height="12" rx="1"/>'
+      : '<polygon points="4 2 14 8 4 14"/>';
+    btn.setAttribute('aria-label', playing ? 'Pause audio demo' : 'Play audio demo');
+  });
+})();
+
+// ── Demo track selection ─────────────────────────────────
+(function() {
+  const rows = document.querySelectorAll('.demo-row');
+  rows.forEach((row, i) => {
+    const nums = ['▶','2','3'];
+    row.addEventListener('click', () => {
+      rows.forEach((r, j) => {
+        r.classList.remove('active');
+        r.querySelector('.demo-row-num').textContent = nums[j];
+      });
+      row.classList.add('active');
+      row.querySelector('.demo-row-num').textContent = '▶';
+    });
+    row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); } });
+  });
+})();
+
+/* ── WAVE BACKGROUNDS (Canvas 2D — no DOM mutations) ── */
+(function() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  function makeNoise2D() {
+    var p = new Uint8Array(512);
+    for (var i = 0; i < 256; i++) p[i] = i;
+    for (var i = 255; i > 0; i--) { var j = Math.floor(Math.random()*(i+1)); var t=p[i]; p[i]=p[j]; p[j]=t; }
+    for (var i = 0; i < 256; i++) p[i+256] = p[i];
+    function fade(t){return t*t*t*(t*(t*6-15)+10);}
+    function lerp(a,b,t){return a+t*(b-a);}
+    function grad(h,x,y){var v=h&3;return((v&2)?-x:x)+((v&1)?-y:y);}
+    return function(x,y){
+      var X=Math.floor(x)&255,Y=Math.floor(y)&255;
+      x-=Math.floor(x); y-=Math.floor(y);
+      var u=fade(x),v=fade(y),a=p[X]+Y,b=p[X+1]+Y;
+      return lerp(lerp(grad(p[a],x,y),grad(p[b],x-1,y),u),lerp(grad(p[a+1],x,y-1),grad(p[b+1],x-1,y-1),u),v);
+    };
+  }
+
+  function initWaves(sectionEl, canvasEl) {
+    var noise = makeNoise2D();
+    var X_GAP = 22, Y_GAP = 8;
+    var ctx = canvasEl.getContext('2d');
+    var width = 0, height = 0, lines = [], rafId = null;
+    var mouse = {x:-10,y:0,lx:0,ly:0,sx:0,sy:0,v:0,vs:0,a:0,set:false};
+
+    function setSize() {
+      width  = sectionEl.offsetWidth  || window.innerWidth  || 1280;
+      height = sectionEl.offsetHeight || 600;
+      var dpr = window.devicePixelRatio || 1;
+      canvasEl.width  = Math.round(width  * dpr);
+      canvasEl.height = Math.round(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      buildLines();
+    }
+
+    function buildLines() {
+      lines = [];
+      var tl = Math.ceil((width+200)/X_GAP), tp = Math.ceil((height+30)/Y_GAP);
+      var xs = (width-X_GAP*tl)/2, ys = (height-Y_GAP*tp)/2;
+      for (var i=0;i<tl;i++) {
+        var pts=[];
+        for (var j=0;j<tp;j++) pts.push({x:xs+X_GAP*i,y:ys+Y_GAP*j,wave:{x:0,y:0},cursor:{x:0,y:0,vx:0,vy:0}});
+        lines.push(pts);
+      }
+    }
+
+    function movePoints(time) {
+      lines.forEach(function(pts) {
+        pts.forEach(function(p) {
+          var move = noise((p.x+time*0.008)*0.003,(p.y+time*0.003)*0.002)*8;
+          p.wave.x = Math.cos(move)*12; p.wave.y = Math.sin(move)*6;
+          var dx=p.x-mouse.sx, dy=p.y-mouse.sy, d=Math.sqrt(dx*dx+dy*dy), l=Math.max(175,mouse.vs);
+          if (d<l) { var s=1-d/l, f=Math.cos(d*0.001)*s; p.cursor.vx+=Math.cos(mouse.a)*f*l*mouse.vs*0.00035; p.cursor.vy+=Math.sin(mouse.a)*f*l*mouse.vs*0.00035; }
+          p.cursor.vx+=(0-p.cursor.x)*0.01; p.cursor.vy+=(0-p.cursor.y)*0.01;
+          p.cursor.vx*=0.95; p.cursor.vy*=0.95;
+          p.cursor.x+=p.cursor.vx; p.cursor.y+=p.cursor.vy;
+          p.cursor.x=Math.min(50,Math.max(-50,p.cursor.x)); p.cursor.y=Math.min(50,Math.max(-50,p.cursor.y));
+        });
+      });
+    }
+
+    function drawLines() {
+      ctx.clearRect(0, 0, width, height);
+      ctx.strokeStyle = '#FF4D00';
+      ctx.lineWidth = 1;
+      lines.forEach(function(pts) {
+        if (pts.length < 2) return;
+        var fp = pts[0];
+        ctx.beginPath();
+        ctx.moveTo(fp.x+fp.wave.x, fp.y+fp.wave.y);
+        for (var j=1;j<pts.length;j++) { var p=pts[j]; ctx.lineTo(p.x+p.wave.x+p.cursor.x, p.y+p.wave.y+p.cursor.y); }
+        ctx.stroke();
+      });
+    }
+
+    function tick(time) {
+      mouse.sx+=(mouse.x-mouse.sx)*0.1; mouse.sy+=(mouse.y-mouse.sy)*0.1;
+      var dx=mouse.x-mouse.lx, dy=mouse.y-mouse.ly;
+      mouse.v=Math.sqrt(dx*dx+dy*dy); mouse.vs+=(mouse.v-mouse.vs)*0.1; mouse.vs=Math.min(100,mouse.vs);
+      mouse.lx=mouse.x; mouse.ly=mouse.y; mouse.a=Math.atan2(dy,dx);
+      movePoints(time); drawLines();
+      rafId = requestAnimationFrame(tick);
+    }
+
+    var obs = new IntersectionObserver(function(entries) {
+      entries.forEach(function(e) {
+        if (e.isIntersecting) { if (!rafId) rafId=requestAnimationFrame(tick); }
+        else { cancelAnimationFrame(rafId); rafId=null; }
+      });
+    }, {threshold:0.05});
+    obs.observe(sectionEl);
+
+    window.addEventListener('resize', function(){setSize();}, {passive:true});
+    sectionEl.addEventListener('mousemove', function(e) {
+      var r=sectionEl.getBoundingClientRect(); mouse.x=e.clientX-r.left; mouse.y=e.clientY-r.top;
+      if (!mouse.set){mouse.sx=mouse.x;mouse.sy=mouse.y;mouse.lx=mouse.x;mouse.ly=mouse.y;mouse.set=true;}
+    }, {passive:true});
+    sectionEl.addEventListener('mouseleave', function(){mouse.x=-10;mouse.y=0;mouse.set=false;}, {passive:true});
+
+    setSize();
+  }
+
+  function start() {
+    var sPlugin=document.getElementById('screenshot'), cPlugin=document.getElementById('wave-canvas-plugin');
+    if (sPlugin && cPlugin) initWaves(sPlugin, cPlugin);
+    var sSound=document.getElementById('sound'), cSound=document.getElementById('wave-canvas-sound');
+    if (sSound && cSound) initWaves(sSound, cSound);
+  }
+
+  if (document.readyState==='complete') { start(); }
+  else { window.addEventListener('load', start); }
+})();
+
+/* ── PRICING WARP SHADER ── */
+(function() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  var canvas = document.getElementById('pricing-canvas');
+  var section = document.getElementById('pricing');
+  if (!canvas || !section) return;
+
+  var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if (!gl) return;
+
+  var VERT = [
+    'attribute vec2 a_pos;',
+    'void main(){gl_Position=vec4(a_pos,0.0,1.0);}'
+  ].join('\n');
+
+  var FRAG = [
+    'precision highp float;',
+    'uniform float u_time;',
+    'uniform vec2 u_res;',
+
+    'float hash(vec2 p){',
+    '  vec3 p3=fract(vec3(p.xyx)*vec3(.1031,.1030,.0973));',
+    '  p3+=dot(p3,p3.yzx+33.33);',
+    '  return fract((p3.x+p3.y)*p3.z);',
+    '}',
+
+    'float noise(vec2 x){',
+    '  vec2 i=floor(x),f=fract(x);',
+    '  f=f*f*(3.0-2.0*f);',
+    '  float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));',
+    '  return mix(a,b,f.x)+(c-a)*f.y*(1.0-f.x)+(d-b)*f.x*f.y;',
+    '}',
+
+    'float fbm(vec2 p){',
+    '  float v=0.0,a=0.5;',
+    '  mat2 rot=mat2(0.8,0.6,-0.6,0.8);',
+    '  for(int i=0;i<7;i++){v+=a*noise(p);p=rot*p*2.1;a*=0.5;}',
+    '  return v;',
+    '}',
+
+    'void main(){',
+    '  vec2 uv=gl_FragCoord.xy/u_res;',
+    '  uv.x*=u_res.x/u_res.y;',
+    '  uv*=1.4;',
+    '  float t=u_time*0.07;',
+
+    '  vec2 q=vec2(fbm(uv+t*0.3),fbm(uv+vec2(5.2,1.3)+t*0.2));',
+    '  vec2 r=vec2(',
+    '    fbm(uv+4.0*q+vec2(1.7,9.2)+t*0.9),',
+    '    fbm(uv+4.0*q+vec2(8.3,2.8)+t*0.7)',
+    '  );',
+    '  float f=fbm(uv+4.0*r);',
+
+    '  vec3 c1=vec3(0.067,0.055,0.047);',  /* site black #111 with faint warm tint */
+    '  vec3 c2=vec3(0.105,0.058,0.032);', /* dark ember, lifts gently from site black */
+    '  vec3 c3=vec3(0.65,0.16,0.0);',   /* deep orange vein */
+    '  vec3 c4=vec3(1.0,0.52,0.06);',   /* amber peak glow */
+
+    '  vec3 col=mix(c1,c2,smoothstep(0.0,0.52,f));',
+    '  col=mix(col,c3,smoothstep(0.46,0.72,f));',
+    '  col=mix(col,c4,smoothstep(0.64,0.94,f));',
+
+    '  float vign=length(uv/vec2(u_res.x/u_res.y,1.0)-vec2(0.5));',
+    '  col*=1.0-smoothstep(0.4,1.2,vign)*0.5;',
+
+    '  gl_FragColor=vec4(col,1.0);',
+    '}'
+  ].join('\n');
+
+  function mkShader(type, src) {
+    var s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s); return s;
+  }
+  var prog = gl.createProgram();
+  gl.attachShader(prog, mkShader(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(prog, mkShader(gl.FRAGMENT_SHADER, FRAG));
+  gl.linkProgram(prog); gl.useProgram(prog);
+
+  var buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+  var posLoc = gl.getAttribLocation(prog, 'a_pos');
+  gl.enableVertexAttribArray(posLoc);
+  gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+  var uTime = gl.getUniformLocation(prog, 'u_time');
+  var uRes  = gl.getUniformLocation(prog, 'u_res');
+  var rafId = null, startTs = null;
+
+  function resize() {
+    var w = section.offsetWidth || window.innerWidth || 1280;
+    var h = section.offsetHeight || 700;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width  = Math.round(w * dpr * 0.5);
+    canvas.height = Math.round(h * dpr * 0.5);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+
+  function render(ts) {
+    if (!startTs) startTs = ts;
+    gl.uniform1f(uTime, (ts - startTs) / 1000);
+    gl.uniform2f(uRes, canvas.width, canvas.height);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    rafId = requestAnimationFrame(render);
+  }
+
+  function init() {
+    resize();
+    var obs = new IntersectionObserver(function(entries) {
+      entries.forEach(function(e) {
+        if (e.isIntersecting) { if (!rafId) rafId = requestAnimationFrame(render); }
+        else { cancelAnimationFrame(rafId); rafId = null; }
+      });
+    }, { threshold: 0.05 });
+    obs.observe(section);
+    window.addEventListener('resize', resize, { passive: true });
+  }
+
+  if (document.readyState === 'complete') { init(); }
+  else { window.addEventListener('load', init); }
+})();
+
+/* ── AURORA STARS ── */
+(function() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  function spawnStars() {
+    var container = document.getElementById('aurora-bg');
+    if (!container) return;
+    for (var i = 0; i < 70; i++) {
+      var s = document.createElement('div');
+      s.className = 'aurora-star';
+      s.style.left = (Math.random() * 100) + '%';
+      s.style.top  = (Math.random() * 100) + '%';
+      var size = (Math.random() < 0.3 ? 3 : 2);
+      s.style.width  = size + 'px';
+      s.style.height = size + 'px';
+      var dur = (Math.random() * 3 + 2).toFixed(2);
+      var del = (Math.random() * 8).toFixed(2);
+      s.style.animation = 'aurora-twinkle ' + dur + 's ' + del + 's infinite ease-in-out';
+      container.appendChild(s);
+    }
+  }
+  if (document.readyState === 'complete') { spawnStars(); }
+  else { window.addEventListener('load', spawnStars); }
+})();
+
+</script>
+</body>
+</html>
